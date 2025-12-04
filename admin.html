@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商品管理 - Price Tracker</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f0f2f5; }
+        h1 { text-align: center; color: #333; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
+        input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { cursor: pointer; border: none; padding: 10px 20px; border-radius: 4px; font-weight: bold; }
+        .btn-add { background: #007bff; color: white; width: 100%; }
+        .btn-save { background: #28a745; color: white; width: 100%; font-size: 1.1em; }
+        .btn-del { background: #dc3545; color: white; padding: 5px 10px; font-size: 0.8em; }
+        .item { border-bottom: 1px solid #eee; padding: 10px 0; display: flex; justify-content: space-between; align-items: center; }
+        .item:last-child { border-bottom: none; }
+        .item-info { font-size: 0.9em; }
+        code { background: #eee; padding: 2px 4px; border-radius: 3px; }
+        .back-link { display: block; text-align: center; margin-top: 20px; text-decoration: none; color: #666; }
+    </style>
+</head>
+<body>
+    <h1>⚙️ 商品管理マネージャー</h1>
+
+    <!-- GitHub認証設定 -->
+    <div class="card">
+        <h3>🔑 GitHub設定</h3>
+        <label>Personal Access Token (Repo権限必須)</label>
+        <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxx...">
+        <label>リポジトリ (ユーザー名/リポジトリ名)</label>
+        <input type="text" id="gh-repo" placeholder="example/price-tracker">
+    </div>
+
+    <!-- 新規追加フォーム -->
+    <div class="card">
+        <h3>➕ 新規商品追加</h3>
+        <label>商品名</label>
+        <input type="text" id="new-name" placeholder="例: Uniqlo パーカー">
+        <label>URL</label>
+        <input type="text" id="new-url" placeholder="https://...">
+        <label>価格セレクタ (CSS Selector)</label>
+        <input type="text" id="new-selector" placeholder="例: .price-state">
+        <button class="btn-add" onclick="addItem()">リストに追加 (一時的)</button>
+    </div>
+
+    <!-- 現在のリスト -->
+    <div class="card">
+        <h3>📝 監視リスト (未保存)</h3>
+        <div id="list-container">読み込み中...</div>
+    </div>
+
+    <button class="btn-save" onclick="saveToGitHub()">💾 GitHubに保存・反映する</button>
+    
+    <a href="index.html" class="back-link">← グラフ画面に戻る</a>
+
+    <script>
+        let productList = [];
+
+        // 初期化：サーバー上の現在のリストを取得
+        async function init() {
+            try {
+                const res = await fetch('products.json?t=' + Date.now());
+                if (res.ok) {
+                    productList = await res.json();
+                } else {
+                    productList = [];
+                }
+                renderList();
+            } catch (e) {
+                console.error(e);
+                document.getElementById('list-container').innerText = "読み込みエラー";
+            }
+        }
+
+        // リスト描画
+        function renderList() {
+            const container = document.getElementById('list-container');
+            container.innerHTML = "";
+            if (productList.length === 0) {
+                container.innerHTML = "<p style='color:#888;text-align:center'>リストは空です</p>";
+                return;
+            }
+            productList.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'item';
+                div.innerHTML = `
+                    <div class="item-info">
+                        <strong>${item.name}</strong><br>
+                        <span style="color:#666;font-size:0.8em">${item.url.substring(0, 40)}...</span><br>
+                        <code>${item.selector}</code>
+                    </div>
+                    <button class="btn-del" onclick="deleteItem(${index})">削除</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // 追加処理
+        function addItem() {
+            const name = document.getElementById('new-name').value.trim();
+            const url = document.getElementById('new-url').value.trim();
+            const selector = document.getElementById('new-selector').value.trim();
+            if(!name || !url || !selector) return alert("全ての項目を入力してください");
+
+            productList.push({ name, url, selector });
+            renderList();
+            
+            // フォームクリア
+            document.getElementById('new-name').value = "";
+            document.getElementById('new-url').value = "";
+            document.getElementById('new-selector').value = "";
+        }
+
+        // 削除処理
+        function deleteItem(index) {
+            if(confirm("この商品をリストから削除しますか？")) {
+                productList.splice(index, 1);
+                renderList();
+            }
+        }
+
+        // GitHub APIへの保存処理
+        async function saveToGitHub() {
+            const token = document.getElementById('gh-token').value.trim();
+            const repo = document.getElementById('gh-repo').value.trim();
+
+            if (!token || !repo) return alert("GitHubトークンとリポジトリ名を入力してください");
+            if (!confirm("本当にGitHub上の設定ファイルを更新しますか？")) return;
+
+            const apiUrl = `https://api.github.com/repos/${repo}/contents/products.json`;
+
+            try {
+                // 1. 現在のSHAを取得
+                const getRes = await fetch(apiUrl, {
+                    headers: { "Authorization": `token ${token}` }
+                });
+                
+                let sha = null;
+                if (getRes.ok) {
+                    const getData = await getRes.json();
+                    sha = getData.sha;
+                }
+
+                // 2. 日本語対応のBase64エンコード
+                const jsonStr = JSON.stringify(productList, null, 2);
+                const content = btoa(unescape(encodeURIComponent(jsonStr)));
+
+                // 3. PUTリクエスト
+                const body = {
+                    message: "Update products.json from Web Admin",
+                    content: content
+                };
+                if (sha) body.sha = sha;
+
+                const putRes = await fetch(apiUrl, {
+                    method: "PUT",
+                    headers: {
+                        "Authorization": `token ${token}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                if (putRes.ok) {
+                    alert("保存成功！次回の自動実行から反映されます。");
+                } else {
+                    const err = await putRes.json();
+                    alert("エラー: " + err.message);
+                }
+            } catch (e) {
+                alert("通信エラー: " + e);
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>価格推移トラッカー</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 1000px; margin: 0 auto; background-color: #f9f9f9; }
+        h1 { text-align: center; color: #333; }
+        .chart-container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .links { text-align: center; margin-top: 20px; }
+        a { text-decoration: none; color: #007bff; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>📈 商品価格推移グラフ</h1>
+    
+    <div class="chart-container">
+        <canvas id="priceChart"></canvas>
+    </div>
+
+    <div class="links">
+        <a href="admin.html">⚙️ 商品管理画面へ</a>
+    </div>
+
+    <script>
+        async function loadData() {
+            try {
+                // キャッシュ回避
+                const res = await fetch('data.json?t=' + Date.now());
+                const data = await res.json();
+                
+                // 全ての日付を抽出してソート
+                let dateSet = new Set();
+                Object.values(data).forEach(items => {
+                    items.forEach(d => dateSet.add(d.date));
+                });
+                const labels = Array.from(dateSet).sort();
+
+                // データセット作成
+                const datasets = [];
+                Object.keys(data).forEach(productName => {
+                    // 日付ごとの価格データを作成（データがない日はnull）
+                    const priceData = labels.map(date => {
+                        const entry = data[productName].find(d => d.date === date);
+                        return entry ? entry.price : null;
+                    });
+
+                    // ランダム色生成
+                    const hue = Math.floor(Math.random() * 360);
+                    const color = `hsl(${hue}, 70%, 50%)`;
+
+                    datasets.push({
+                        label: productName,
+                        data: priceData,
+                        borderColor: color,
+                        backgroundColor: color,
+                        tension: 0.1,
+                        spanGaps: true // データ欠けがあっても線を繋ぐ
+                    });
+                });
+
+                const ctx = document.getElementById('priceChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: datasets
+                    },
+                    options: {
+                        responsive: true,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: false,
+                                title: { display: true, text: '価格 (円)' }
+                            }
+                        }
+                    }
+                });
+
+            } catch (e) {
+                console.error(e);
+                alert("データの読み込みに失敗しました。まだデータがない可能性があります。");
+            }
+        }
+        loadData();
+    </script>
+</body>
+</html>
